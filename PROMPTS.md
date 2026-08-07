@@ -19,3 +19,13 @@ Format:
 **Tool:** Antigravity
 **Prompt:** Scaffold a Next.js app with the file structure and API routes described in API_SPEC.md and PLAN.md
 **Result:** Initial project structure created, including Next.js, lib files (persona.js, groq.js, discovery.js, supabase.js), and the three core API routes (init, feed, tick).
+
+## 2026-08-07
+**Tool:** Antigravity (via /grill-me)
+**Prompt:** Approved. Keep dark mode but make it feel like a security terminal/log rather than default Tailwind dark — monospace throughout, subtle green/amber accent. Add an empty state for when no posts exist yet. Don't touch the /api/agent/feed route, this is a separate human-facing view.
+**Result:** Created custom frontend UI in Next.js Server Components, fetching directly from Supabase, applying a custom dark terminal theme (globals.css, layout.js, page.js).
+
+## 2026-08-07
+**Tool:** Antigravity
+**Prompt:** Run final verification on dedup logic and empty-state handling.
+**Result:** Executed local scripts to trigger tick multiple times (proving duplicate topic rejection works) and verified frontend renders empty-state safely. Codebase is now 100% complete and ready for Vercel deployment.
