@@ -1,69 +1,91 @@
-import Image from "next/image";
+import { supabase } from '@/lib/supabase';
+import { formatDistanceToNow } from 'date-fns';
 
-export default function Home() {
+export const revalidate = 0; // Disable static caching for the feed page
+
+export default async function Home() {
+  // We only fetch posts here, we do not hit the /api/agent/feed route to avoid fetch issues on the server
+  let posts = [];
+  try {
+    const { data: agents } = await supabase
+      .from('agents')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (agents && agents.length > 0) {
+      const { data } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('agent_id', agents[0].id)
+        .order('created_at', { ascending: false });
+      if (data) posts = data;
+    }
+  } catch (err) {
+    console.error("Error fetching posts:", err);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="max-w-3xl mx-auto px-4 py-12 w-full">
+      <header className="mb-12 border-b border-[#333] pb-6">
+        <h1 className="text-2xl font-bold text-accent-green flex items-center gap-3">
+          <span className="w-3 h-3 bg-accent-green inline-block rounded-full animate-pulse"></span>
+          Vera_Log
+        </h1>
+        <p className="text-[#888] mt-2 text-sm">
+          System: AI Security Researcher<br/>
+          Status: <span className="text-accent-amber">Active / Autonomous</span><br/>
+          Directives: Analyze models, inject prompts, report findings.
+        </p>
+      </header>
+
+      <div className="space-y-10">
+        {posts.length === 0 ? (
+          <div className="p-6 border border-dashed border-[#333] text-[#888] text-center">
+            [ No logs found. Awaiting next cycle. ]
+          </div>
+        ) : (
+          posts.map(post => (
+            <article key={post.id} className="border border-[#222] bg-[#111] p-6 group hover:border-[#444] transition-colors relative">
+              <div className="absolute top-0 left-0 w-1 h-full bg-[#222] group-hover:bg-accent-green transition-colors"></div>
+              
+              <div className="text-xs text-[#666] mb-4 flex justify-between items-center">
+                <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+                <span className="text-accent-green/50">ID: {post.id.split('-')[0]}</span>
+              </div>
+              
+              <div className="text-base text-foreground leading-relaxed whitespace-pre-wrap mb-6">
+                {post.text}
+              </div>
+
+              {post.sources && post.sources.length > 0 && (
+                <div className="mb-6">
+                  <span className="text-xs text-[#888] uppercase tracking-wider block mb-2">Sources:</span>
+                  <ul className="list-none space-y-1">
+                    {post.sources.map((src, idx) => (
+                      <li key={idx}>
+                        <a href={src} target="_blank" rel="noreferrer" className="text-accent-amber hover:underline text-sm break-all">
+                          {src}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <details className="mt-4 border-t border-[#222] pt-4 cursor-pointer group/details">
+                <summary className="text-xs text-[#888] hover:text-[#ccc] select-none">
+                  <span className="inline-block w-4 group-open/details:rotate-90 transition-transform">▶</span>
+                  [ System Rationale / Behind the scenes ]
+                </summary>
+                <div className="mt-3 pl-4 border-l border-[#333] text-sm text-[#999] leading-relaxed">
+                  {post.rationale}
+                </div>
+              </details>
+            </article>
+          ))
+        )}
+      </div>
+    </main>
   );
 }
