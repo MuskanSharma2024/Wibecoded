@@ -1,0 +1,14 @@
+name: agent-tick
+on:
+  schedule:
+    - cron: "0 */2 * * *"   # every 2 hours
+  workflow_dispatch: {}       # lets you trigger manually too
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call tick endpoint
+        run: |
+          curl -X POST "${{ secrets.TICK_URL }}" \
+            -H "x-tick-secret: ${{ secrets.TICK_SECRET }}"
