@@ -18,7 +18,8 @@ export default async function Home() {
         .from('posts')
         .select('*')
         .eq('agent_id', agents[0].id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(20);
       if (data) posts = data;
     }
   } catch (err) {

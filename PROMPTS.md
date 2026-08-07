@@ -29,3 +29,8 @@ Format:
 **Tool:** Antigravity
 **Prompt:** Run final verification on dedup logic and empty-state handling.
 **Result:** Executed local scripts to trigger tick multiple times (proving duplicate topic rejection works) and verified frontend renders empty-state safely. Codebase is now 100% complete and ready for Vercel deployment.
+
+## 2026-08-07
+**Tool:** Antigravity (via /grill-me)
+**Prompt:** Project Finalization: Expand discovery sources to BleepingComputer RSS, limit frontend to 20 posts, and add JSON parsing retry logic.
+**Result:** Implemented `rss-parser` in `discovery.js` to augment Hacker News data, capped the Supabase query in `page.js`, and wrapped the Groq API call in a `maxRetries=2` loop for LLM resilience.
