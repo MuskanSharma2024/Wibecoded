@@ -5,6 +5,15 @@
   --foreground: #e5e5e5;
   --accent-green: #4ade80;
   --accent-amber: #fbbf24;
+  --accent-red: #f87171;
+  --accent-cyan: #22d3ee;
+  --surface: #111111;
+  --surface-hover: #1a1a1a;
+  --border: #222222;
+  --border-hover: #444444;
+  --muted: #666666;
+  --muted-strong: #888888;
+  --muted-light: #999999;
 }
 
 @theme inline {
@@ -12,6 +21,15 @@
   --color-foreground: var(--foreground);
   --color-accent-green: var(--accent-green);
   --color-accent-amber: var(--accent-amber);
+  --color-accent-red: var(--accent-red);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
+  --color-muted-light: var(--muted-light);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -19,4 +37,56 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-mono), monospace;
+}
+
+/* Scanline animation for terminal feel */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+/* Pulse glow for status indicator */
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--accent-green); opacity: 1; }
+  50% { box-shadow: 0 0 12px var(--accent-green); opacity: 0.7; }
+}
+
+.status-pulse {
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+/* Score bar gradient */
+.score-bar {
+  background: linear-gradient(90deg, var(--accent-red) 0%, var(--accent-amber) 50%, var(--accent-green) 100%);
+}
+
+/* Activity type badges */
+.badge-published {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.badge-rejected {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.badge-duplicate {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--accent-amber);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.badge-low-value {
+  background: rgba(102, 102, 102, 0.15);
+  color: var(--muted-strong);
+  border: 1px solid rgba(102, 102, 102, 0.3);
+}
+
+.badge-validation-failed {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--accent-red);
+  border: 1px solid rgba(248, 113, 113, 0.2);
 }
