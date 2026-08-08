@@ -159,348 +159,346 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let cycleId = null;
-
   try {
-    // 1. Resolve agent ID
-    const agentId = await resolveAgentId();
-    if (!agentId) {
-      return NextResponse.json({ error: 'No agent initialized' }, { status: 400 });
+    // 1. Fetch all agents from database (limit to 10 to prevent runaway cost/timeouts)
+    const { data: agents, error: agentsError } = await supabase
+      .from('agents')
+      .select('id, name, domain')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (agentsError) {
+      console.error('Failed to fetch agents:', agentsError);
+      return NextResponse.json({ error: 'Failed to fetch agents' }, { status: 500 });
     }
 
-    // 2. Concurrency guard
-    const isConcurrent = await checkConcurrency(agentId);
-    if (isConcurrent) {
-      return NextResponse.json({ error: 'Another tick cycle is already running' }, { status: 409 });
+    if (!agents || agents.length === 0) {
+      return NextResponse.json({ error: 'No agents initialized' }, { status: 400 });
     }
 
-    // 3. Create cycle record
-    const cycle = await createCycleRecord(agentId);
-    cycleId = cycle?.id;
+    // Filter to pinned agent if AGENT_ID is specified in environment variables
+    let agentsToProcess = agents;
+    const pinnedId = process.env.AGENT_ID;
+    if (pinnedId) {
+      const pinnedAgent = agents.find(a => a.id === pinnedId);
+      if (pinnedAgent) {
+        agentsToProcess = [pinnedAgent];
+      } else {
+        const { data: directAgent } = await supabase
+          .from('agents')
+          .select('id, name, domain')
+          .eq('id', pinnedId)
+          .single();
+        if (directAgent) {
+          agentsToProcess = [directAgent];
+        } else {
+          console.warn(`Pinned AGENT_ID ${pinnedId} not found, falling back to all agents`);
+        }
+      }
+    }
 
-    // 4. Discover candidate topics
+    // 2. Discover candidate topics (fetched once per tick and reused across agents)
     let candidates = [];
     try {
       candidates = await fetchCandidateTopics();
     } catch (err) {
       console.error("Discovery fetch failed:", err);
-      if (cycleId) {
-        try {
-          await supabase
-            .from('tick_cycles')
-            .update({ status: 'failed', completed_at: new Date().toISOString() })
-            .eq('id', cycleId);
-        } catch {}
-      }
       return NextResponse.json({ published: 0, rejected: 0, error: "discovery fetch" });
     }
 
     if (candidates.length === 0) {
-      if (cycleId) await completeCycleRecord(cycleId, { discovered_count: 0, published_count: 0, rejected_count: 0 });
-      return NextResponse.json({ published: 0, rejected: 0 });
+      return NextResponse.json({
+        agentsProcessed: agentsToProcess.length,
+        totalPublished: 0,
+        totalRejected: 0,
+        published: 0,
+        rejected: 0,
+      });
     }
 
-    let memories = [];
-    let judgmentResult = null;
-    let duplicates = [];
-    let needsJudgment = [];
-    let judgmentCandidates = [];
+    let totalPublished = 0;
+    let totalRejected = 0;
+    let totalDuplicates = 0;
 
-    try {
-      // 5. Retrieve editorial memory
-      memories = await getRecentMemories(agentId, 30);
-      const rejections = await getRecentRejections(agentId, 50);
-      const memoryContext = formatMemoryContext(memories, rejections);
+    // Process each agent independently
+    for (const agent of agentsToProcess) {
+      const agentId = agent.id;
+      const agentName = agent.name || "Vera";
+      const agentDomain = agent.domain || "AI Security";
 
-      // 6. Novelty check — pre-filter obvious duplicates
-      const noveltyResults = [];
-      for (const candidate of candidates) {
-        const novelty = checkNoveltyLocal(candidate.title, memories, rejections);
-        noveltyResults.push({ candidate, novelty });
+      // 3. Concurrency guard per agent
+      const isConcurrent = await checkConcurrency(agentId);
+      if (isConcurrent) {
+        console.warn(`Skipping concurrent tick run for agent ${agentId}`);
+        continue;
       }
 
-      // Separate obvious duplicates from candidates that need editorial judgment
-      duplicates = noveltyResults.filter(r => r.novelty.status === 'duplicate');
-      needsJudgment = noveltyResults.filter(r => r.novelty.status !== 'duplicate');
+      // 4. Create cycle record
+      let cycleId = null;
+      const cycle = await createCycleRecord(agentId);
+      cycleId = cycle?.id;
 
-      // Store duplicates as rejections
-      for (const dup of duplicates) {
-        await storeRejection(agentId, {
-          topic: dup.candidate.title,
-          normalized_title: normalizeTopic(dup.candidate.title),
-          reason: dup.novelty.reason,
-          editorial_score: 0,
-          decision_type: 'duplicate',
-        });
-      }
+      let publishedCount = 0;
+      let rejectedCount = 0;
+      let duplicateCount = 0;
+      let lowValueCount = 0;
+      let validationFailedCount = 0;
 
-      if (needsJudgment.length === 0) {
-        if (cycleId) await completeCycleRecord(cycleId, {
-          discovered_count: candidates.length,
-          published_count: 0,
-          rejected_count: 0,
-          duplicate_count: duplicates.length,
-        });
-        return NextResponse.json({
-          published: 0,
-          rejected: 0,
-          duplicates: duplicates.length,
-          message: 'All candidates were duplicates',
-        });
-      }
-
-      // 7. Editorial scoring — run judgment prompt with memory context
-      judgmentCandidates = needsJudgment.map(r => r.candidate);
-      const topicsJsonStr = JSON.stringify(judgmentCandidates);
-      const judgmentPrompt = getJudgmentPrompt(topicsJsonStr, memoryContext);
-      judgmentResult = await generateJson(judgmentPrompt);
-
-      if (!judgmentResult || !judgmentResult.decisions) {
-        throw new Error('Failed to parse judgment decisions');
-      }
-    } catch (err) {
-      console.error("Judgment call failed:", err);
-      if (cycleId) {
-        try {
-          await supabase
-            .from('tick_cycles')
-            .update({ status: 'failed', completed_at: new Date().toISOString() })
-            .eq('id', cycleId);
-        } catch {}
-      }
-      return NextResponse.json({ published: 0, rejected: 0, error: "judgment call" });
-    }
-
-    const decisions = judgmentResult.decisions;
-    const acceptedTopics = [];
-    let rejectedCount = 0;
-    let lowValueCount = 0;
-
-    // 8. Process decisions — threshold-based accept/reject
-    for (const decision of decisions) {
-      const topic = judgmentCandidates.find(c => c.id === decision.id);
-      if (!topic) continue;
-
-      const totalScore = decision.total_score || 0;
-      const isPublish = decision.decision?.toLowerCase() === 'publish' && totalScore >= PUBLISH_THRESHOLD;
-
-      if (isPublish) {
-        acceptedTopics.push({ topic, decision });
-      } else {
-        // Determine rejection type
-        const decisionType = totalScore < 40 ? 'low_value' : 'rejected';
-        if (decisionType === 'low_value') lowValueCount++;
-        else rejectedCount++;
-
-        await storeRejection(agentId, {
-          topic: topic.title,
-          normalized_title: normalizeTopic(topic.title),
-          reason: decision.reason || `Score ${totalScore}/100 below threshold ${PUBLISH_THRESHOLD}`,
-          editorial_score: totalScore,
-          decision_type: decisionType,
-        });
-      }
-    }
-
-    // Retrieve titles of the last 20 published topics
-    const publishedTitles = memories.slice(0, 20).map(m => m.topic);
-
-    // 9-13. Process accepted topics — validate, write, validate output, persist
-    const topicsToWrite = acceptedTopics.slice(0, 2); // Cap at 2 per cycle
-    let publishedCount = 0;
-    let validationFailedCount = 0;
-    const previousAngles = getPreviousAngles(memories);
-
-    for (const { topic, decision } of topicsToWrite) {
       try {
-        // --- 1. DEDUP logic right before writing ---
-        let isDuplicate = false;
-        for (const publishedTitle of publishedTitles) {
-          if (isWordOverlapDuplicate(topic.title, publishedTitle)) {
-            isDuplicate = true;
-            break;
-          }
+        // 5. Retrieve editorial memory
+        const memories = await getRecentMemories(agentId, 30);
+        const rejections = await getRecentRejections(agentId, 50);
+        const memoryContext = formatMemoryContext(memories, rejections);
+
+        // 6. Novelty check — pre-filter obvious duplicates
+        const noveltyResults = [];
+        for (const candidate of candidates) {
+          const novelty = checkNoveltyLocal(candidate.title, memories, rejections);
+          noveltyResults.push({ candidate, novelty });
         }
 
-        if (isDuplicate) {
-          rejectedCount++;
+        const duplicates = noveltyResults.filter(r => r.novelty.status === 'duplicate');
+        const needsJudgment = noveltyResults.filter(r => r.novelty.status !== 'duplicate');
+        duplicateCount = duplicates.length;
+
+        // Store duplicates as rejections
+        for (const dup of duplicates) {
           await storeRejection(agentId, {
-            topic: topic.title,
-            normalized_title: normalizeTopic(topic.title),
-            reason: "duplicate of recent post",
-            editorial_score: decision.total_score || 0,
+            topic: dup.candidate.title,
+            normalized_title: normalizeTopic(dup.candidate.title),
+            reason: dup.novelty.reason,
+            editorial_score: 0,
             decision_type: 'duplicate',
           });
-          continue; // Skip this topic
         }
 
-        // 9. Source validation — verify URLs are reachable
-        const sourceResults = await validateSources([topic.url]);
-        const sourceValid = sourceResults.length === 0 || sourceResults.some(s => s.valid);
-
-        if (!sourceValid) {
-          validationFailedCount++;
-          await storeRejection(agentId, {
-            topic: topic.title,
-            normalized_title: normalizeTopic(topic.title),
-            reason: `Source validation failed: ${topic.url} is unreachable`,
-            editorial_score: decision.total_score || 0,
-            decision_type: 'validation_failed',
-          });
-          continue;
-        }
-
-        // 10. Generate post with enriched context
-        const editorialContext = {
-          editorialScore: decision.total_score,
-          editorialReason: decision.reason,
-          relevantMemories: memories
-            .slice(0, 5)
-            .map(m => `- "${m.topic}" (angle: ${m.angle || 'N/A'})`)
-            .join('\n'),
-          previousAngles: previousAngles
-            .map(a => `- ${a.topic}: ${a.angle}`)
-            .join('\n'),
-        };
-
-        // --- WRITING CALL STAGE ---
-        let postResult;
-        try {
-          const writingPrompt = getWritingPrompt(topic, editorialContext);
-          postResult = await generateJson(writingPrompt);
-          if (!postResult || !postResult.text || !postResult.rationale) {
-            throw new Error("Empty response or missing fields");
-          }
-        } catch (err) {
-          console.error("Writing call failed:", err);
+        if (needsJudgment.length === 0) {
           if (cycleId) {
-            try {
-              await supabase
-                .from('tick_cycles')
-                .update({ status: 'failed', completed_at: new Date().toISOString() })
-                .eq('id', cycleId);
-            } catch {}
-          }
-          return NextResponse.json({ published: 0, rejected: 0, error: "writing call" });
-        }
-
-        // 11. Validate generated post against source
-        const postValidation = await validatePost(
-          postResult.text,
-          topic.title,
-          topic.snippet,
-          topic.url
-        );
-
-        if (!postValidation.valid && postValidation.severity === 'major') {
-          validationFailedCount++;
-          await storeRejection(agentId, {
-            topic: topic.title,
-            normalized_title: normalizeTopic(topic.title),
-            reason: `Post validation failed: ${postValidation.issues.join('; ')}`,
-            editorial_score: decision.total_score || 0,
-            decision_type: 'validation_failed',
-          });
-          continue;
-        }
-
-        // --- SUPABASE INSERT STAGE ---
-        let postData;
-        try {
-          const { data, error: postError } = await supabase
-            .from('posts')
-            .insert([{
-              agent_id: agentId,
-              text: postResult.text,
-              rationale: postResult.rationale,
-              sources: [topic.url],
-              topic_key: topic.id,
-              editorial_score: decision.total_score || 0,
-            }])
-            .select()
-            .single();
-
-          if (postError) throw postError;
-          postData = data;
-        } catch (err) {
-          console.error("Supabase insert failed:", err);
-          if (cycleId) {
-            try {
-              await supabase
-                .from('tick_cycles')
-                .update({ status: 'failed', completed_at: new Date().toISOString() })
-                .eq('id', cycleId);
-            } catch {}
-          }
-          return NextResponse.json({ published: 0, rejected: 0, error: "supabase insert" });
-        }
-
-        // 13. Extract and store editorial memory
-        try {
-          const memoryPrompt = getMemoryExtractionPrompt(postResult.text, topic);
-          const memoryData = await generateJson(memoryPrompt);
-
-          if (memoryData) {
-            await storePublicationMemory(agentId, postData.id, {
-              topic: memoryData.topic || topic.title,
-              normalized_title: normalizeTopic(memoryData.topic || topic.title),
-              angle: memoryData.angle || '',
-              key_claims: memoryData.key_claims || [],
-              technical_concepts: memoryData.technical_concepts || [],
-              entities: memoryData.entities || [],
-              editorial_stance: memoryData.editorial_stance || '',
-              source_urls: [topic.url],
-              editorial_score: decision.total_score || 0,
+            await completeCycleRecord(cycleId, {
+              discovered_count: candidates.length,
+              published_count: 0,
+              rejected_count: 0,
+              duplicate_count: duplicateCount,
+              low_value_count: 0,
+              validation_failed_count: 0,
             });
           }
-        } catch (memErr) {
-          // Memory extraction failure should not block publishing
-          console.error('Memory extraction failed (non-fatal):', memErr.message);
+          totalDuplicates += duplicateCount;
+          continue;
         }
 
-        // Dynamically add to publishedTitles to avoid duplicate writing in the same run
-        publishedTitles.push(topic.title);
-        publishedCount++;
+        // 7. Editorial scoring — run judgment prompt with memory context (dynamic agent name/domain)
+        const judgmentCandidates = needsJudgment.map(r => r.candidate);
+        const topicsJsonStr = JSON.stringify(judgmentCandidates);
+        const judgmentPrompt = getJudgmentPrompt(topicsJsonStr, memoryContext, agentName, agentDomain);
+        const judgmentResult = await generateJson(judgmentPrompt);
 
-      } catch (topicErr) {
-        // Per-candidate error isolation — one failure doesn't crash the cycle
-        console.error(`Failed to process topic "${topic.title}":`, topicErr.message);
+        if (!judgmentResult || !judgmentResult.decisions) {
+          throw new Error('Failed to parse judgment decisions');
+        }
+
+        const decisions = judgmentResult.decisions;
+        const acceptedTopics = [];
+
+        // 8. Process decisions — threshold-based accept/reject
+        for (const decision of decisions) {
+          const topic = judgmentCandidates.find(c => c.id === decision.id);
+          if (!topic) continue;
+
+          const totalScore = decision.total_score || 0;
+          const isPublish = decision.decision?.toLowerCase() === 'publish' && totalScore >= PUBLISH_THRESHOLD;
+
+          if (isPublish) {
+            acceptedTopics.push({ topic, decision });
+          } else {
+            const decisionType = totalScore < 40 ? 'low_value' : 'rejected';
+            if (decisionType === 'low_value') lowValueCount++;
+            else rejectedCount++;
+
+            await storeRejection(agentId, {
+              topic: topic.title,
+              normalized_title: normalizeTopic(topic.title),
+              reason: decision.reason || `Score ${totalScore}/100 below threshold ${PUBLISH_THRESHOLD}`,
+              editorial_score: totalScore,
+              decision_type: decisionType,
+            });
+          }
+        }
+
+        // Retrieve titles of the last 20 published topics
+        const publishedTitles = memories.slice(0, 20).map(m => m.topic);
+
+        // 9-13. Process accepted topics — validate, write, validate output, persist
+        const topicsToWrite = acceptedTopics.slice(0, 2); // Cap at 2 per cycle
+        const previousAngles = getPreviousAngles(memories);
+
+        for (const { topic, decision } of topicsToWrite) {
+          try {
+            // DEDUP logic right before writing
+            let isDuplicate = false;
+            for (const publishedTitle of publishedTitles) {
+              if (isWordOverlapDuplicate(topic.title, publishedTitle)) {
+                isDuplicate = true;
+                break;
+              }
+            }
+
+            if (isDuplicate) {
+              rejectedCount++;
+              await storeRejection(agentId, {
+                topic: topic.title,
+                normalized_title: normalizeTopic(topic.title),
+                reason: "duplicate of recent post",
+                editorial_score: decision.total_score || 0,
+                decision_type: 'duplicate',
+              });
+              continue;
+            }
+
+            // 9. Source validation — verify URLs are reachable
+            const sourceResults = await validateSources([topic.url]);
+            const sourceValid = sourceResults.length === 0 || sourceResults.some(s => s.valid);
+
+            if (!sourceValid) {
+              validationFailedCount++;
+              await storeRejection(agentId, {
+                topic: topic.title,
+                normalized_title: normalizeTopic(topic.title),
+                reason: `Source validation failed: ${topic.url} is unreachable`,
+                editorial_score: decision.total_score || 0,
+                decision_type: 'validation_failed',
+              });
+              continue;
+            }
+
+            // 10. Generate post with enriched context (dynamic agent name/domain)
+            const editorialContext = {
+              editorialScore: decision.total_score,
+              editorialReason: decision.reason,
+              relevantMemories: memories
+                .slice(0, 5)
+                .map(m => `- "${m.topic}" (angle: ${m.angle || 'N/A'})`)
+                .join('\n'),
+              previousAngles: previousAngles
+                .map(a => `- ${a.topic}: ${a.angle}`)
+                .join('\n'),
+            };
+
+            const writingPrompt = getWritingPrompt(topic, editorialContext, agentName, agentDomain);
+            const postResult = await generateJson(writingPrompt);
+            if (!postResult || !postResult.text || !postResult.rationale) {
+              throw new Error("Empty response or missing fields");
+            }
+
+            // 11. Validate generated post against source
+            const postValidation = await validatePost(
+              postResult.text,
+              topic.title,
+              topic.snippet,
+              topic.url
+            );
+
+            if (!postValidation.valid && postValidation.severity === 'major') {
+              validationFailedCount++;
+              await storeRejection(agentId, {
+                topic: topic.title,
+                normalized_title: normalizeTopic(topic.title),
+                reason: `Post validation failed: ${postValidation.issues.join('; ')}`,
+                editorial_score: decision.total_score || 0,
+                decision_type: 'validation_failed',
+              });
+              continue;
+            }
+
+            // 12. Supabase Insert
+            let postData;
+            const { data, error: postError } = await supabase
+              .from('posts')
+              .insert([{
+                agent_id: agentId,
+                text: postResult.text,
+                rationale: postResult.rationale,
+                sources: [topic.url],
+                topic_key: topic.id,
+                editorial_score: decision.total_score || 0,
+              }])
+              .select()
+              .single();
+
+            if (postError) throw postError;
+            postData = data;
+            publishedCount++;
+
+            // 13. Extract and store editorial memory
+            try {
+              const memoryPrompt = getMemoryExtractionPrompt(postResult.text, topic);
+              const memoryData = await generateJson(memoryPrompt);
+
+              if (memoryData) {
+                await storePublicationMemory(agentId, postData.id, {
+                  topic: memoryData.topic || topic.title,
+                  normalized_title: normalizeTopic(memoryData.topic || topic.title),
+                  angle: memoryData.angle || '',
+                  key_claims: memoryData.key_claims || [],
+                  technical_concepts: memoryData.technical_concepts || [],
+                  entities: memoryData.entities || [],
+                  editorial_stance: memoryData.editorial_stance || '',
+                  source_urls: [topic.url],
+                  editorial_score: decision.total_score || 0,
+                });
+              }
+            } catch (memErr) {
+              console.error('Memory extraction failed (non-fatal):', memErr.message);
+            }
+
+            // Dynamically add to publishedTitles to avoid duplicate writing in the same run
+            publishedTitles.push(topic.title);
+
+          } catch (topicErr) {
+            console.error(`Failed to process topic "${topic.title}":`, topicErr.message);
+          }
+        }
+
+        const finalCounts = {
+          discovered_count: candidates.length,
+          published_count: publishedCount,
+          rejected_count: rejectedCount,
+          duplicate_count: duplicateCount,
+          low_value_count: lowValueCount,
+          validation_failed_count: validationFailedCount,
+        };
+
+        if (cycleId) await completeCycleRecord(cycleId, finalCounts);
+
+        totalPublished += publishedCount;
+        totalRejected += (rejectedCount + lowValueCount + validationFailedCount);
+        totalDuplicates += duplicateCount;
+
+      } catch (err) {
+        console.error(`Pipeline run failed for agent ${agentName} (${agentId}):`, err);
+        if (cycleId) {
+          try {
+            await supabase
+              .from('tick_cycles')
+              .update({ status: 'failed', completed_at: new Date().toISOString() })
+              .eq('id', cycleId);
+          } catch {}
+        }
       }
     }
 
-    // Complete cycle record
-    const finalCounts = {
-      discovered_count: candidates.length,
-      published_count: publishedCount,
-      rejected_count: rejectedCount,
-      duplicate_count: duplicates.length,
-      low_value_count: lowValueCount,
-      validation_failed_count: validationFailedCount,
-    };
-
-    if (cycleId) await completeCycleRecord(cycleId, finalCounts);
-
     return NextResponse.json({
-      ...finalCounts,
-      published: publishedCount,
-      rejected: rejectedCount + lowValueCount + validationFailedCount,
-      duplicates: duplicates.length,
-      message: `Cycle complete: ${publishedCount} published, ${rejectedCount + lowValueCount} rejected, ${duplicates.length} duplicates`,
+      agentsProcessed: agentsToProcess.length,
+      totalPublished,
+      totalRejected,
+      published: totalPublished,
+      rejected: totalRejected,
+      duplicates: totalDuplicates,
+      message: `Ticked successfully across ${agentsToProcess.length} agents: ${totalPublished} published, ${totalRejected} rejected`,
     });
 
   } catch (error) {
     console.error('Tick Error:', error);
-
-    // Mark cycle as failed if we have a record
-    if (cycleId) {
-      try {
-        await supabase
-          .from('tick_cycles')
-          .update({ status: 'failed', completed_at: new Date().toISOString() })
-          .eq('id', cycleId);
-      } catch {}
-    }
-
     return NextResponse.json({ published: 0, rejected: 0, error: "unexpected failure: " + error.message });
   }
 }
