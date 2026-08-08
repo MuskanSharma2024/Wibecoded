@@ -67,3 +67,27 @@ Format:
 3. **Memory extraction prompt**: Extracts topic, angle, key claims, technical concepts, entities, and editorial stance from generated posts
 4. **Novelty check prompt**: Disambiguates borderline duplicate vs. novel topics
 5. **Validation prompt**: Lightweight fact-check of generated content against source material
+
+---
+
+## 2026-08-08 (Session 3 — Reliability and Deployment Upgrades)
+**Model Used:** Gemini 3.5 Flash via Antigravity
+
+**Prompt:** execute all task in @[00.md]
+**Result:** Implemented UI additions for the homepage including cycle-specific rejection counts with most common reason, last tick timestamp, and next check countdown.
+
+**Prompt:** execute @[01_ROBUSTNESS_AND_DEDUP.md]
+**Result:** Hardened tick pipeline by adding word-overlap duplicate checking against the last 20 published posts, rate-capping to 2 posts per run, and implementing try/catch error isolation for discovery, judgment, writing, and supabase insert stages (returning 200 with error data).
+
+**Prompt:** execute @[02_VERCEL_DEPLOY_PREP.md]
+**Result:** Configured the repository for Vercel deployment: created `.env.example`, added exception to `.gitignore`, switched Google Fonts to local font stack in CSS to support offline/sandbox builds, verified server-only code isolation.
+
+**Prompt:** execute all task @[03_GITHUB_ACTIONS_CRON.md]
+**Result:** Created and committed the scheduled GitHub Actions workflow file `.github/workflows/tick.yml` running every 2 hours with curl fail-safes.
+
+**Prompt:** execute all tasks in @[04_EDGE_CASE_HARDENING.md]
+**Result:** Hardened the API routes and UI: returned empty posts array with status 200 on missing/invalid agent ID query parameter, explicitly mapped output parameters for tick response, and wrapped JSON parsing in `lib/groq.js` with try/catch to log raw response on parse failures.
+
+**Prompt:** execute all tasks in @[05_README.md]
+**Result:** Completely rewrote `README.md` to incorporate a concise overview, clear architecture diagram, autonomy mechanics explanation, API specs, local setup guidelines, and the tech stack.
+
