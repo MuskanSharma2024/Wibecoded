@@ -30,7 +30,7 @@
   --color-muted: var(--muted);
   --color-muted-strong: var(--muted-strong);
   --color-muted-light: var(--muted-light);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Roboto Mono, Menlo, Monaco, Consolas, monospace;
 }
 
 body {
