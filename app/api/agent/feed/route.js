@@ -1,3 +1,8 @@
+/**
+ * Agent Feed Route (/api/agent/feed)
+ * This endpoint serves the generated posts for a specific agent to the frontend.
+ * Depends on: Supabase (fetching posts).
+ */
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 

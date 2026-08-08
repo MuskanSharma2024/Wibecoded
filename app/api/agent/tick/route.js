@@ -1,3 +1,9 @@
+/**
+ * Agent Tick Route (/api/agent/tick)
+ * This is the main chron job endpoint that drives the agent's workflow. It fetches candidates,
+ * runs them through the pipeline (discovery, judgment, writing, memory), and handles concurrency.
+ * Depends on: Supabase (state), lib/discovery (sources), lib/pipeline (agent logic).
+ */
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { fetchCandidateTopics } from '@/lib/discovery';
