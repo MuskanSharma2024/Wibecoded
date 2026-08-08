@@ -185,11 +185,12 @@ export async function POST(request) {
     } catch (err) {
       console.error("Discovery fetch failed:", err);
       if (cycleId) {
-        await supabase
-          .from('tick_cycles')
-          .update({ status: 'failed', completed_at: new Date().toISOString() })
-          .eq('id', cycleId)
-          .catch(() => {});
+        try {
+          await supabase
+            .from('tick_cycles')
+            .update({ status: 'failed', completed_at: new Date().toISOString() })
+            .eq('id', cycleId);
+        } catch {}
       }
       return NextResponse.json({ published: 0, rejected: 0, error: "discovery fetch" });
     }
@@ -203,6 +204,7 @@ export async function POST(request) {
     let judgmentResult = null;
     let duplicates = [];
     let needsJudgment = [];
+    let judgmentCandidates = [];
 
     try {
       // 5. Retrieve editorial memory
@@ -248,7 +250,7 @@ export async function POST(request) {
       }
 
       // 7. Editorial scoring — run judgment prompt with memory context
-      const judgmentCandidates = needsJudgment.map(r => r.candidate);
+      judgmentCandidates = needsJudgment.map(r => r.candidate);
       const topicsJsonStr = JSON.stringify(judgmentCandidates);
       const judgmentPrompt = getJudgmentPrompt(topicsJsonStr, memoryContext);
       judgmentResult = await generateJson(judgmentPrompt);
@@ -259,11 +261,12 @@ export async function POST(request) {
     } catch (err) {
       console.error("Judgment call failed:", err);
       if (cycleId) {
-        await supabase
-          .from('tick_cycles')
-          .update({ status: 'failed', completed_at: new Date().toISOString() })
-          .eq('id', cycleId)
-          .catch(() => {});
+        try {
+          await supabase
+            .from('tick_cycles')
+            .update({ status: 'failed', completed_at: new Date().toISOString() })
+            .eq('id', cycleId);
+        } catch {}
       }
       return NextResponse.json({ published: 0, rejected: 0, error: "judgment call" });
     }
@@ -371,11 +374,12 @@ export async function POST(request) {
         } catch (err) {
           console.error("Writing call failed:", err);
           if (cycleId) {
-            await supabase
-              .from('tick_cycles')
-              .update({ status: 'failed', completed_at: new Date().toISOString() })
-              .eq('id', cycleId)
-              .catch(() => {});
+            try {
+              await supabase
+                .from('tick_cycles')
+                .update({ status: 'failed', completed_at: new Date().toISOString() })
+                .eq('id', cycleId);
+            } catch {}
           }
           return NextResponse.json({ published: 0, rejected: 0, error: "writing call" });
         }
@@ -421,11 +425,12 @@ export async function POST(request) {
         } catch (err) {
           console.error("Supabase insert failed:", err);
           if (cycleId) {
-            await supabase
-              .from('tick_cycles')
-              .update({ status: 'failed', completed_at: new Date().toISOString() })
-              .eq('id', cycleId)
-              .catch(() => {});
+            try {
+              await supabase
+                .from('tick_cycles')
+                .update({ status: 'failed', completed_at: new Date().toISOString() })
+                .eq('id', cycleId);
+            } catch {}
           }
           return NextResponse.json({ published: 0, rejected: 0, error: "supabase insert" });
         }
@@ -485,11 +490,12 @@ export async function POST(request) {
 
     // Mark cycle as failed if we have a record
     if (cycleId) {
-      await supabase
-        .from('tick_cycles')
-        .update({ status: 'failed', completed_at: new Date().toISOString() })
-        .eq('id', cycleId)
-        .catch(() => {});
+      try {
+        await supabase
+          .from('tick_cycles')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', cycleId);
+      } catch {}
     }
 
     return NextResponse.json({ published: 0, rejected: 0, error: "unexpected failure: " + error.message });
