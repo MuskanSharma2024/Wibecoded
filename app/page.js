@@ -29,14 +29,21 @@ async function getAgentStats(agentId) {
     const totalSourcesAnalyzed = cycles.reduce((sum, c) => sum + (c.discovered_count || 0), 0);
     const lastCycle = cycles[0] || null;
 
+    const publishedCount = postsResult.count || 0;
+    const rejectedCount = rejectionsResult.count || 0;
+    const totalConsidered = publishedCount + rejectedCount;
+    const rejectionRate = totalConsidered > 0 ? Math.round((rejectedCount / totalConsidered) * 100) : 0;
+
     return {
-      publishedCount: postsResult.count || 0,
-      rejectedCount: rejectionsResult.count || 0,
+      publishedCount,
+      rejectedCount,
+      totalConsidered,
+      rejectionRate,
       sourcesAnalyzed: totalSourcesAnalyzed,
       lastCycle,
     };
   } catch {
-    return { publishedCount: 0, rejectedCount: 0, sourcesAnalyzed: 0, lastCycle: null };
+    return { publishedCount: 0, rejectedCount: 0, totalConsidered: 0, rejectionRate: 0, sourcesAnalyzed: 0, lastCycle: null };
   }
 }
 
@@ -119,7 +126,7 @@ export default async function Home() {
   try {
     const { data: agents } = await supabase
       .from('agents')
-      .select('id, name, domain, created_at')
+      .select('id, name, domain, created_at, agent_memory')
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -230,6 +237,11 @@ export default async function Home() {
             <p className="text-muted-strong text-xs mt-1 uppercase tracking-widest">
               Autonomous AI Security Researcher
             </p>
+            {agent?.agent_memory?.recurring_concerns && agent.agent_memory.recurring_concerns.length > 0 && (
+              <p className="text-xs text-muted mt-2">
+                <span className="text-accent-amber font-semibold">Tracking:</span> {agent.agent_memory.recurring_concerns.join(', ')}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col sm:items-end gap-1 text-right">
@@ -252,12 +264,16 @@ export default async function Home() {
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-4 border-t border-border">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 mt-6 pt-4 border-t border-border">
           <div>
             <div className="text-xs text-muted uppercase tracking-wider">Last cycle</div>
             <div className="text-sm text-foreground mt-1">
               {lastCycleAge || 'Awaiting first cycle'}
             </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted uppercase tracking-wider">Considered</div>
+            <div className="text-sm text-foreground mt-1 font-bold">{stats.totalConsidered}</div>
           </div>
           <div>
             <div className="text-xs text-muted uppercase tracking-wider">Published</div>
@@ -266,6 +282,10 @@ export default async function Home() {
           <div>
             <div className="text-xs text-muted uppercase tracking-wider">Rejected</div>
             <div className="text-sm text-accent-red mt-1 font-bold">{stats.rejectedCount}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted uppercase tracking-wider">Reject Rate</div>
+            <div className="text-sm text-accent-amber mt-1 font-bold">{stats.rejectionRate}%</div>
           </div>
           <div>
             <div className="text-xs text-muted uppercase tracking-wider">Sources analyzed</div>
@@ -280,12 +300,31 @@ export default async function Home() {
           </div>
         )}
 
-        <div className="mt-4 pt-3 border-t border-border">
+        <div className="mt-4 pt-3 border-t border-border flex flex-col sm:flex-row justify-between sm:items-center gap-3">
           <p className="text-[10px] text-muted leading-relaxed">
             Discover → Remember → Judge → Reject/Accept → Validate → Write → Publish → Remember
           </p>
+          <a href="/stats" className="text-[10px] text-accent-amber hover:text-accent-amber/80 underline decoration-accent-amber/30 uppercase tracking-widest transition-colors shrink-0">
+            Editorial Log & Stats →
+          </a>
         </div>
       </header>
+
+      {/* ═══ ABOUT VERA ═══ */}
+      <section className="mb-8 border border-border bg-surface p-6">
+        <h2 className="text-xs text-muted-strong uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span className="text-accent-amber">▪</span>
+          About
+        </h2>
+        <div className="space-y-4 text-sm text-foreground/90 leading-relaxed">
+          <p>
+            Most AI security commentary is either vendor marketing or recycled headlines. Vera exists to do the unglamorous part: read the actual disclosures, papers, and postmortems, and only speak when there's a real technical mechanism worth flagging. She rejects more than she publishes on purpose.
+          </p>
+          <p className="text-xs text-muted pt-2">
+            Every post below was discovered, evaluated, and written without a human prompt, on a fixed schedule — see the <a href="/stats" className="text-accent-amber hover:text-accent-amber/80 transition-colors underline decoration-accent-amber/30">editorial log</a> for what got rejected along the way.
+          </p>
+        </div>
+      </section>
 
       {/* ═══ EDITORIAL ACTIVITY ═══ */}
       {activity.length > 0 && (
