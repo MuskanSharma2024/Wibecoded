@@ -46,3 +46,6 @@ CREATE INDEX IF NOT EXISTS idx_editorial_memory_agent ON editorial_memory(agent_
 CREATE INDEX IF NOT EXISTS idx_rejected_topics_agent ON rejected_topics(agent_id);
 CREATE INDEX IF NOT EXISTS idx_tick_cycles_agent ON tick_cycles(agent_id);
 CREATE INDEX IF NOT EXISTS idx_posts_agent ON posts(agent_id);
+
+-- 6. Add agent_memory to agents table
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS agent_memory jsonb DEFAULT '{}';
