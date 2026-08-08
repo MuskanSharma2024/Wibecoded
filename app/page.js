@@ -19,7 +19,7 @@ async function getAgentStats(agentId) {
         .eq('agent_id', agentId),
       supabase
         .from('tick_cycles')
-        .select('discovered_count, completed_at, status')
+        .select('discovered_count, completed_at, started_at, status')
         .eq('agent_id', agentId)
         .order('started_at', { ascending: false })
         .limit(20),
@@ -112,6 +112,9 @@ export default async function Home() {
   let agent = null;
   let stats = { publishedCount: 0, rejectedCount: 0, sourcesAnalyzed: 0, lastCycle: null };
   let activity = [];
+  let lastTickTime = null;
+  let lastCycleRejectionsCount = 0;
+  let mostCommonCategory = '';
 
   try {
     const { data: agents } = await supabase
@@ -123,7 +126,7 @@ export default async function Home() {
     if (agents && agents.length > 0) {
       agent = agents[0];
 
-      const [postsResult, statsResult, activityResult] = await Promise.all([
+      const [postsResult, statsResult, activityResult, latestPostResult, latestRejectionResult] = await Promise.all([
         supabase
           .from('posts')
           .select('*')
@@ -132,11 +135,71 @@ export default async function Home() {
           .limit(20),
         getAgentStats(agent.id),
         getEditorialActivity(agent.id),
+        supabase
+          .from('posts')
+          .select('created_at')
+          .eq('agent_id', agent.id)
+          .order('created_at', { ascending: false })
+          .limit(1),
+        supabase
+          .from('rejected_topics')
+          .select('created_at')
+          .eq('agent_id', agent.id)
+          .order('created_at', { ascending: false })
+          .limit(1),
       ]);
 
       if (postsResult.data) posts = postsResult.data;
       stats = statsResult;
       activity = activityResult;
+
+      const latestPostTime = latestPostResult.data?.[0]?.created_at
+        ? new Date(latestPostResult.data[0].created_at)
+        : null;
+      const latestRejectionTime = latestRejectionResult.data?.[0]?.created_at
+        ? new Date(latestRejectionResult.data[0].created_at)
+        : null;
+
+      if (latestPostTime && latestRejectionTime) {
+        lastTickTime = latestPostTime > latestRejectionTime ? latestPostTime : latestRejectionTime;
+      } else {
+        lastTickTime = latestPostTime || latestRejectionTime;
+      }
+
+      if (stats.lastCycle) {
+        const { data: lastCycleRejections } = await supabase
+          .from('rejected_topics')
+          .select('decision_type, reason')
+          .eq('agent_id', agent.id)
+          .gte('created_at', stats.lastCycle.started_at);
+
+        if (lastCycleRejections && lastCycleRejections.length > 0) {
+          lastCycleRejectionsCount = lastCycleRejections.length;
+
+          const counts = {};
+          lastCycleRejections.forEach(r => {
+            const cat = r.decision_type || 'rejected';
+            counts[cat] = (counts[cat] || 0) + 1;
+          });
+
+          let maxCount = -1;
+          let maxCat = 'rejected';
+          for (const cat in counts) {
+            if (counts[cat] > maxCount) {
+              maxCount = counts[cat];
+              maxCat = cat;
+            }
+          }
+
+          const friendlyNames = {
+            duplicate: 'duplicate / already covered',
+            low_value: 'low editorial value',
+            validation_failed: 'source validation failed',
+            rejected: 'editorial reject',
+          };
+          mostCommonCategory = friendlyNames[maxCat] || maxCat;
+        }
+      }
     }
   } catch (err) {
     console.error("Error fetching data:", err);
@@ -145,6 +208,14 @@ export default async function Home() {
   const lastCycleAge = stats.lastCycle?.completed_at
     ? formatDistanceToNow(new Date(stats.lastCycle.completed_at), { addSuffix: true })
     : null;
+
+  let nextTickMinutes = null;
+  if (lastTickTime) {
+    const elapsedMs = Date.now() - lastTickTime.getTime();
+    const intervalMs = 2 * 60 * 60 * 1000; // 2 hours
+    const remainingMs = intervalMs - (elapsedMs % intervalMs);
+    nextTickMinutes = Math.max(1, Math.round(remainingMs / (60 * 1000)));
+  }
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8 w-full">
@@ -161,9 +232,21 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-accent-green bg-accent-green/10 border border-accent-green/30 px-2 py-0.5 uppercase tracking-wider font-bold">
-              ● Active
+          <div className="flex flex-col sm:items-end gap-1 text-right">
+            <div className="flex items-center gap-2 justify-start sm:justify-end">
+              <span className="text-[10px] text-accent-green bg-accent-green/10 border border-accent-green/30 px-2 py-0.5 uppercase tracking-wider font-bold">
+                ● Active / Autonomous
+              </span>
+            </div>
+            <span className="text-[10px] text-muted block mt-1">
+              {lastTickTime ? (
+                <>
+                  Last tick: {formatDistanceToNow(lastTickTime, { addSuffix: true })}
+                  {nextTickMinutes !== null && ` • next check in ~${nextTickMinutes}m`}
+                </>
+              ) : (
+                "first tick pending"
+              )}
             </span>
           </div>
         </div>
@@ -189,6 +272,13 @@ export default async function Home() {
             <div className="text-sm text-accent-amber mt-1 font-bold">{stats.sourcesAnalyzed}</div>
           </div>
         </div>
+
+        {/* Rejection count per tick */}
+        {lastTickTime && lastCycleRejectionsCount > 0 && (
+          <div className="mt-4 pt-3 border-t border-border text-[10px] text-muted leading-relaxed">
+            <span className="text-accent-red font-semibold">{lastCycleRejectionsCount} topics rejected this cycle</span> — {mostCommonCategory}
+          </div>
+        )}
 
         <div className="mt-4 pt-3 border-t border-border">
           <p className="text-[10px] text-muted leading-relaxed">

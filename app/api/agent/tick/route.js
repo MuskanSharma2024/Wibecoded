@@ -108,6 +108,50 @@ async function completeCycleRecord(cycleId, counts) {
     .eq('id', cycleId);
 }
 
+/**
+ * Simple word overlap check to detect duplicates.
+ * Returns true if more than 60% of significant words match.
+ */
+function isWordOverlapDuplicate(candidateTitle, publishedTitle) {
+  const getSignificantWords = (title) => {
+    const stopWords = new Set([
+      'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+      'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
+      'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
+      'before', 'after', 'above', 'below', 'between', 'under', 'again',
+      'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why',
+      'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+      'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so',
+      'than', 'too', 'very', 'just', 'about', 'and', 'but', 'or', 'if',
+      'while', 'that', 'this', 'what', 'which', 'who', 'whom', 'it', 'its',
+      'new', 'using', 'via', 'now'
+    ]);
+    return new Set(
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 1 && !stopWords.has(w))
+    );
+  };
+
+  const candidateWords = getSignificantWords(candidateTitle);
+  const publishedWords = getSignificantWords(publishedTitle);
+
+  if (candidateWords.size === 0) return false;
+
+  let matchCount = 0;
+  for (const word of candidateWords) {
+    if (publishedWords.has(word)) {
+      matchCount++;
+    }
+  }
+
+  const overlapRatio = matchCount / candidateWords.size;
+  return overlapRatio > 0.60;
+}
+
 export async function POST(request) {
   const tickSecret = request.headers.get('x-tick-secret');
 
@@ -135,68 +179,93 @@ export async function POST(request) {
     cycleId = cycle?.id;
 
     // 4. Discover candidate topics
-    const candidates = await fetchCandidateTopics();
+    let candidates = [];
+    try {
+      candidates = await fetchCandidateTopics();
+    } catch (err) {
+      console.error("Discovery fetch failed:", err);
+      if (cycleId) {
+        await supabase
+          .from('tick_cycles')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', cycleId)
+          .catch(() => {});
+      }
+      return NextResponse.json({ published: 0, rejected: 0, error: "discovery fetch" });
+    }
+
     if (candidates.length === 0) {
       if (cycleId) await completeCycleRecord(cycleId, { discovered_count: 0, published_count: 0, rejected_count: 0 });
-      return NextResponse.json({ published: 0, rejected: 0, message: 'No candidates found' });
+      return NextResponse.json({ published: 0, rejected: 0 });
     }
 
-    // 5. Retrieve editorial memory
-    const memories = await getRecentMemories(agentId, 30);
-    const rejections = await getRecentRejections(agentId, 50);
-    const memoryContext = formatMemoryContext(memories, rejections);
+    let memories = [];
+    let judgmentResult = null;
+    let duplicates = [];
+    let needsJudgment = [];
 
-    // 6. Novelty check — pre-filter obvious duplicates
-    const noveltyResults = [];
-    for (const candidate of candidates) {
-      const novelty = checkNoveltyLocal(candidate.title, memories, rejections);
-      noveltyResults.push({ candidate, novelty });
-    }
+    try {
+      // 5. Retrieve editorial memory
+      memories = await getRecentMemories(agentId, 30);
+      const rejections = await getRecentRejections(agentId, 50);
+      const memoryContext = formatMemoryContext(memories, rejections);
 
-    // Separate obvious duplicates from candidates that need editorial judgment
-    const duplicates = noveltyResults.filter(r => r.novelty.status === 'duplicate');
-    const needsJudgment = noveltyResults.filter(r => r.novelty.status !== 'duplicate');
+      // 6. Novelty check — pre-filter obvious duplicates
+      const noveltyResults = [];
+      for (const candidate of candidates) {
+        const novelty = checkNoveltyLocal(candidate.title, memories, rejections);
+        noveltyResults.push({ candidate, novelty });
+      }
 
-    // Store duplicates as rejections
-    for (const dup of duplicates) {
-      await storeRejection(agentId, {
-        topic: dup.candidate.title,
-        normalized_title: normalizeTopic(dup.candidate.title),
-        reason: dup.novelty.reason,
-        editorial_score: 0,
-        decision_type: 'duplicate',
-      });
-    }
+      // Separate obvious duplicates from candidates that need editorial judgment
+      duplicates = noveltyResults.filter(r => r.novelty.status === 'duplicate');
+      needsJudgment = noveltyResults.filter(r => r.novelty.status !== 'duplicate');
 
-    if (needsJudgment.length === 0) {
-      if (cycleId) await completeCycleRecord(cycleId, {
-        discovered_count: candidates.length,
-        published_count: 0,
-        rejected_count: 0,
-        duplicate_count: duplicates.length,
-      });
-      return NextResponse.json({
-        published: 0,
-        rejected: 0,
-        duplicates: duplicates.length,
-        message: 'All candidates were duplicates',
-      });
-    }
+      // Store duplicates as rejections
+      for (const dup of duplicates) {
+        await storeRejection(agentId, {
+          topic: dup.candidate.title,
+          normalized_title: normalizeTopic(dup.candidate.title),
+          reason: dup.novelty.reason,
+          editorial_score: 0,
+          decision_type: 'duplicate',
+        });
+      }
 
-    // 7. Editorial scoring — run judgment prompt with memory context
-    const judgmentCandidates = needsJudgment.map(r => r.candidate);
-    const topicsJsonStr = JSON.stringify(judgmentCandidates);
-    const judgmentPrompt = getJudgmentPrompt(topicsJsonStr, memoryContext);
-    const judgmentResult = await generateJson(judgmentPrompt);
+      if (needsJudgment.length === 0) {
+        if (cycleId) await completeCycleRecord(cycleId, {
+          discovered_count: candidates.length,
+          published_count: 0,
+          rejected_count: 0,
+          duplicate_count: duplicates.length,
+        });
+        return NextResponse.json({
+          published: 0,
+          rejected: 0,
+          duplicates: duplicates.length,
+          message: 'All candidates were duplicates',
+        });
+      }
 
-    if (!judgmentResult || !judgmentResult.decisions) {
-      if (cycleId) await completeCycleRecord(cycleId, {
-        discovered_count: candidates.length,
-        published_count: 0,
-        rejected_count: 0,
-        duplicate_count: duplicates.length,
-      });
-      return NextResponse.json({ error: 'Failed to parse judgment decisions' }, { status: 500 });
+      // 7. Editorial scoring — run judgment prompt with memory context
+      const judgmentCandidates = needsJudgment.map(r => r.candidate);
+      const topicsJsonStr = JSON.stringify(judgmentCandidates);
+      const judgmentPrompt = getJudgmentPrompt(topicsJsonStr, memoryContext);
+      judgmentResult = await generateJson(judgmentPrompt);
+
+      if (!judgmentResult || !judgmentResult.decisions) {
+        throw new Error('Failed to parse judgment decisions');
+      }
+    } catch (err) {
+      console.error("Judgment call failed:", err);
+      if (cycleId) {
+        await supabase
+          .from('tick_cycles')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', cycleId)
+          .catch(() => {});
+      }
+      return NextResponse.json({ published: 0, rejected: 0, error: "judgment call" });
     }
 
     const decisions = judgmentResult.decisions;
@@ -230,6 +299,9 @@ export async function POST(request) {
       }
     }
 
+    // Retrieve titles of the last 20 published topics
+    const publishedTitles = memories.slice(0, 20).map(m => m.topic);
+
     // 9-13. Process accepted topics — validate, write, validate output, persist
     const topicsToWrite = acceptedTopics.slice(0, 2); // Cap at 2 per cycle
     let publishedCount = 0;
@@ -238,6 +310,27 @@ export async function POST(request) {
 
     for (const { topic, decision } of topicsToWrite) {
       try {
+        // --- 1. DEDUP logic right before writing ---
+        let isDuplicate = false;
+        for (const publishedTitle of publishedTitles) {
+          if (isWordOverlapDuplicate(topic.title, publishedTitle)) {
+            isDuplicate = true;
+            break;
+          }
+        }
+
+        if (isDuplicate) {
+          rejectedCount++;
+          await storeRejection(agentId, {
+            topic: topic.title,
+            normalized_title: normalizeTopic(topic.title),
+            reason: "duplicate of recent post",
+            editorial_score: decision.total_score || 0,
+            decision_type: 'duplicate',
+          });
+          continue; // Skip this topic
+        }
+
         // 9. Source validation — verify URLs are reachable
         const sourceResults = await validateSources([topic.url]);
         const sourceValid = sourceResults.length === 0 || sourceResults.some(s => s.valid);
@@ -267,12 +360,24 @@ export async function POST(request) {
             .join('\n'),
         };
 
-        const writingPrompt = getWritingPrompt(topic, editorialContext);
-        const postResult = await generateJson(writingPrompt);
-
-        if (!postResult || !postResult.text || !postResult.rationale) {
-          console.error('Failed to generate post for:', topic.title);
-          continue;
+        // --- WRITING CALL STAGE ---
+        let postResult;
+        try {
+          const writingPrompt = getWritingPrompt(topic, editorialContext);
+          postResult = await generateJson(writingPrompt);
+          if (!postResult || !postResult.text || !postResult.rationale) {
+            throw new Error("Empty response or missing fields");
+          }
+        } catch (err) {
+          console.error("Writing call failed:", err);
+          if (cycleId) {
+            await supabase
+              .from('tick_cycles')
+              .update({ status: 'failed', completed_at: new Date().toISOString() })
+              .eq('id', cycleId)
+              .catch(() => {});
+          }
+          return NextResponse.json({ published: 0, rejected: 0, error: "writing call" });
         }
 
         // 11. Validate generated post against source
@@ -295,23 +400,34 @@ export async function POST(request) {
           continue;
         }
 
-        // 12. Persist the post
-        const { data: postData, error: postError } = await supabase
-          .from('posts')
-          .insert([{
-            agent_id: agentId,
-            text: postResult.text,
-            rationale: postResult.rationale,
-            sources: [topic.url],
-            topic_key: topic.id,
-            editorial_score: decision.total_score || 0,
-          }])
-          .select()
-          .single();
+        // --- SUPABASE INSERT STAGE ---
+        let postData;
+        try {
+          const { data, error: postError } = await supabase
+            .from('posts')
+            .insert([{
+              agent_id: agentId,
+              text: postResult.text,
+              rationale: postResult.rationale,
+              sources: [topic.url],
+              topic_key: topic.id,
+              editorial_score: decision.total_score || 0,
+            }])
+            .select()
+            .single();
 
-        if (postError) {
-          console.error('Failed to persist post:', postError);
-          continue;
+          if (postError) throw postError;
+          postData = data;
+        } catch (err) {
+          console.error("Supabase insert failed:", err);
+          if (cycleId) {
+            await supabase
+              .from('tick_cycles')
+              .update({ status: 'failed', completed_at: new Date().toISOString() })
+              .eq('id', cycleId)
+              .catch(() => {});
+          }
+          return NextResponse.json({ published: 0, rejected: 0, error: "supabase insert" });
         }
 
         // 13. Extract and store editorial memory
@@ -337,6 +453,8 @@ export async function POST(request) {
           console.error('Memory extraction failed (non-fatal):', memErr.message);
         }
 
+        // Dynamically add to publishedTitles to avoid duplicate writing in the same run
+        publishedTitles.push(topic.title);
         publishedCount++;
 
       } catch (topicErr) {
@@ -374,6 +492,6 @@ export async function POST(request) {
         .catch(() => {});
     }
 
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ published: 0, rejected: 0, error: "unexpected failure: " + error.message });
   }
 }
