@@ -1,8 +1,8 @@
 name: agent-tick
 on:
   schedule:
-    - cron: "0 */2 * * *"   # every 2 hours
-  workflow_dispatch: {}       # lets you trigger manually too
+    - cron: "0 */2 * * *"
+  workflow_dispatch: {}
 
 jobs:
   tick:
@@ -10,5 +10,6 @@ jobs:
     steps:
       - name: Call tick endpoint
         run: |
-          curl -X POST "${{ secrets.TICK_URL }}" \
-            -H "x-tick-secret: ${{ secrets.TICK_SECRET }}"
+          curl -sf -X POST "${{ secrets.TICK_URL }}" \
+            -H "x-tick-secret: ${{ secrets.TICK_SECRET }}" \
+            || echo "Tick call failed, will retry next scheduled run"
