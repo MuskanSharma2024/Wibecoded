@@ -339,7 +339,7 @@ export default async function Home() {
         <div className="space-y-6">
           {posts.length === 0 ? (
             <div className="p-8 border border-dashed border-border text-muted text-center text-sm">
-              [ No logs found. Awaiting next autonomous cycle. ]
+              [ Vera has not published any analysis yet. Awaiting next autonomous cycle. ]
             </div>
           ) : (
             posts.map(post => (

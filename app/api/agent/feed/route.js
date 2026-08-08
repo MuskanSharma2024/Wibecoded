@@ -6,7 +6,7 @@ export async function GET(request) {
   const agentId = searchParams.get('agentId');
 
   if (!agentId) {
-    return NextResponse.json({ error: 'agentId is required' }, { status: 400 });
+    return NextResponse.json({ posts: [] });
   }
 
   try {

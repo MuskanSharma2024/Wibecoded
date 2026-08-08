@@ -482,6 +482,9 @@ export async function POST(request) {
 
     return NextResponse.json({
       ...finalCounts,
+      published: publishedCount,
+      rejected: rejectedCount + lowValueCount + validationFailedCount,
+      duplicates: duplicates.length,
       message: `Cycle complete: ${publishedCount} published, ${rejectedCount + lowValueCount} rejected, ${duplicates.length} duplicates`,
     });
 
