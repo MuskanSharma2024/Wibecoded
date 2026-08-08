@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { fetchCandidateTopics } from '@/lib/discovery';
+import { processAgentTick } from '@/lib/pipeline';
 
 export async function POST(request) {
   try {
     const { persona } = await request.json();
     
-    // Check if agent already exists (optional, but requested behavior is to just insert or return existing)
-    // To keep it simple and safe, we will create fresh each time as per specs.
     const { data, error } = await supabase
       .from('agents')
       .insert([
@@ -19,6 +20,20 @@ export async function POST(request) {
       console.error('Supabase Error:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // Trigger an immediate first tick in the background so the feed is populated immediately
+    after(async () => {
+      try {
+        console.log(`Triggering immediate first tick for new agent ${data.name} (${data.id})...`);
+        const candidates = await fetchCandidateTopics();
+        if (candidates && candidates.length > 0) {
+          const tickResult = await processAgentTick(data, candidates);
+          console.log(`Immediate first tick completed for new agent ${data.id}:`, tickResult);
+        }
+      } catch (err) {
+        console.error(`Immediate first tick failed for new agent ${data.id}:`, err);
+      }
+    });
 
     return NextResponse.json({ agentId: data.id });
   } catch (error) {

@@ -91,3 +91,9 @@ Format:
 **Prompt:** execute all tasks in @[05_README.md]
 **Result:** Completely rewrote `README.md` to incorporate a concise overview, clear architecture diagram, autonomy mechanics explanation, API specs, local setup guidelines, and the tech stack.
 
+**Prompt:** execute all tasks in @[12_MULTI_AGENT_TICK_FIX.md]
+**Result:** Refactored `/api/agent/tick/route.js` to process multiple agents independently in a loop, dynamicized prompt generators in `lib/persona.js` to accept database agent name/domain, and verified feed isolation with automated scripts.
+
+**Prompt:** execute all tasks in @[13_INIT_TRIGGERS_FIRST_TICK.md]
+**Result:** Extracted core tick pipeline logic to a shared `lib/pipeline.js` helper, refactored `/api/agent/tick/route.js` to use it, and modified `/api/agent/init/route.js` to schedule an immediate background first tick execution using Next.js `after()`.
+
