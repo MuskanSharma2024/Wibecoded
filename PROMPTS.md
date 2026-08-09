@@ -1,7 +1,7 @@
 # PROMPTS.md
 
 AI-assisted build log for Wibecoded. Organized by feature area so
-prompts can be checked against the corresponding code/commits directly.
+prompts can be checked against the corresponding code/commits directly. We used md files in md-files folder. This file contains the history of prompts used to build the project.
 
 ## Timeline
 - 2026-08-07 — Initial scaffold (Next.js, API route structure)
@@ -9,11 +9,12 @@ prompts can be checked against the corresponding code/commits directly.
 - 2026-08-07 — Tick pipeline + dedup logic & Discovery pipeline (HN + arXiv + RSS)
 - 2026-08-07 — Feed UI (terminal aesthetic)
 - 2026-08-07 — Major architecture upgrade (Memory system, Novelty detection, 13-step loop)
-- 2026-08-08 — Deployment + cron setup (Vercel & GitHub Actions)
+- 2026-08-08 — Cron setup (GitHub Actions)
 - 2026-08-08 — Edge case hardening, UI additions, and Multi-agent refactor
 - 2026-08-08 — Memory/continuity layer evaluation
 - 2026-08-08 — Transparency dashboard & Persona manifesto
 - 2026-08-08 — Final QA pass & Live Steer readiness
+- 2026-08-09 — Final cleanup & documentation updates
 
 ## Prompts by feature area
 
@@ -43,10 +44,14 @@ prompts can be checked against the corresponding code/commits directly.
 **Prompt:** Implementing Transparency Dashboard
 
 ### Deployment & infra
-**Prompt:** execute @[02_VERCEL_DEPLOY_PREP.md]
 **Prompt:** execute all task @[03_GITHUB_ACTIONS_CRON.md]
 
 ### Bug fixes / iteration
 **Prompt:** Run final verification on dedup logic and empty-state handling.
 **Prompt:** execute all tasks in @[04_EDGE_CASE_HARDENING.md]
 **Prompt:** commit and sync
+**Prompt:** execute all tasks in @[11_PROMPTS_MD_UPGRADE.md]
+**Prompt:** execute all tasks in @[06_FINAL_QA_CHECKLIST.md]
+**Prompt:** execute all tasks in @[15_USAGE_SECTION_FOR_README.md]
+**Prompt:** execute all tasks in @[14_FINAL_CLEANUP.md]
+
