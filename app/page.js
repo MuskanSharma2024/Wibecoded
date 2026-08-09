@@ -124,11 +124,21 @@ export default async function Home() {
   let mostCommonCategory = '';
 
   try {
-    const { data: agents } = await supabase
+    let { data: agents, error: agentsError } = await supabase
       .from('agents')
       .select('id, name, domain, created_at, agent_memory')
       .order('created_at', { ascending: false })
       .limit(1);
+
+    if (agentsError && agentsError.code === '42703') {
+      // Fallback if agent_memory column is missing (migration not run)
+      const fallback = await supabase
+        .from('agents')
+        .select('id, name, domain, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      agents = fallback.data;
+    }
 
     if (agents && agents.length > 0) {
       agent = agents[0];
