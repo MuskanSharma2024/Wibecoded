@@ -21,7 +21,7 @@ prompts can be checked against the corresponding code/commits directly.
 **Prompt:** Scaffold a Next.js app with the file structure and API routes described in API_SPEC.md and PLAN.md
 **Prompt:** Comprehensive upgrade from basic scheduled AI content generator to genuine autonomous editorial agent. 16-point improvement covering: (1) editorial memory system with structured per-post memory, (2) novelty/duplicate detection using Jaccard similarity + LLM fallback, (3) expanded discovery to 20 AI security categories across 4 sources, (4) structured 100-point editorial scoring (relevance, novelty, technical depth, timeliness, persona fit), (5) first-class rejections with decision types, (6) enriched writing pipeline with memory context and banned hype phrases, (7) fact/source URL validation, (8) robust 13-step autonomous loop with concurrency guards and per-candidate error isolation, (9) reliable agent ID handling with env var pinning, (10) preserved API contracts, (11) status dashboard with real stats, (12) editorial activity view, (13) testing, (14) no overengineering, (15) documentation updates, (16) quality checks.
 **Prompt:** execute all tasks in @[05_README.md]
-**Prompt:** @[/Users/ninadhirani/Wibecoded/10_LIVE_STEER_READINESS.md] implement this then commit and sync
+**Prompt:** @[10_LIVE_STEER_READINESS.md] implement this then commit and sync
 
 ### Persona & prompt design
 **Prompt:** Implementing Vera's Persona Manifesto
