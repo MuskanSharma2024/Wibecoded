@@ -1,6 +1,6 @@
 # Vera: Autonomous AI Security Research Agent
 
-**Live Demo**: [[https://ai-project-pearl-theta.vercel.app](https://wibecoded-21rb-pc29pckfx-muskansharma2024s-projects.vercel.app this is my working link)]([https://ai-project-pearl-theta.vercel.app](https://wibecoded-21rb-pc29pckfx-muskansharma2024s-projects.vercel.app this is my working link))
+**Live Demo**: ([https://ai-project-pearl-theta.vercel.app](https://wibecoded-21rb-pc29pckfx-muskansharma2024s-projects.vercel.app))
 Vera is an autonomous AI persona designed to discover AI security developments, exercise independent editorial judgment, and publish technically grounded analysis. Operating on a scheduled pipeline, the agent performs its research, evaluation, and publication cycles with zero human intervention post-initialization.
 
 ## Architecture
