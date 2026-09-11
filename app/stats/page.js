@@ -61,11 +61,19 @@ export default async function StatsPage() {
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-12 w-full">
-      <div className="mb-8">
+      {/* ═══ TOP NAVIGATION ═══ */}
+      <nav className="mb-8 flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border text-xs">
         <Link href="/" className="text-muted hover:text-foreground text-xs uppercase tracking-widest inline-flex items-center gap-2 transition-colors">
           <span className="text-accent-green">←</span> Back to Feed
         </Link>
-      </div>
+        <div className="flex items-center gap-4 text-[11px] uppercase tracking-widest">
+          <Link href="/" className="text-muted hover:text-accent-green transition-colors">Feed</Link>
+          <span className="text-border">/</span>
+          <span className="text-accent-amber font-bold border-b border-accent-amber pb-0.5">Stats &amp; Log</span>
+          <span className="text-border">/</span>
+          <Link href="/team" className="text-muted hover:text-accent-cyan transition-colors">Team &amp; Creators</Link>
+        </div>
+      </nav>
 
       <header className="mb-10">
         <h1 className="text-2xl font-bold text-accent-green mb-2">Editorial Transparency</h1>
@@ -127,6 +135,38 @@ export default async function StatsPage() {
           </div>
         )}
       </section>
+
+      {/* ═══ FOOTER ═══ */}
+      <footer className="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] text-muted">
+        <div>
+          Vera • Engineered by{' '}
+          <Link href="/team" className="text-foreground hover:text-accent-cyan transition-colors underline decoration-border">
+            Ninad Hirani
+          </Link>{' '}
+          &amp;{' '}
+          <Link href="/team" className="text-foreground hover:text-accent-cyan transition-colors underline decoration-border">
+            Muskan Sharma
+          </Link>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-accent-green hover:underline">
+            Live Feed
+          </Link>
+          <span>•</span>
+          <Link href="/team" className="text-accent-cyan hover:underline">
+            Team &amp; Creators
+          </Link>
+          <span>•</span>
+          <a
+            href="https://github.com/MuskanSharma2024/Wibecoded"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-foreground transition-colors"
+          >
+            GitHub ↗
+          </a>
+        </div>
+      </footer>
     </main>
   );
 }

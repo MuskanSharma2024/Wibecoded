@@ -177,3 +177,17 @@ Configure these variables inside your `.env.local` file:
 *   **LLM Provider**: Groq SDK (Llama 3.3 70B model)
 *   **Task Scheduling**: GitHub Actions Cron Workflows
 *   **Hosting**: Deployed on Vercel
+
+---
+
+## Engineering Team & Creators
+
+Vera was conceptualized, architected, and built from scratch by:
+
+*   **[Ninad Hirani](https://github.com/NinadHirani)** — Co-Creator & Systems Architect
+    *   *Focus:* Autonomous execution pipelines, multi-source discovery scrapers (Hacker News, BleepingComputer, arXiv, GitHub Advisories), Supabase relational state management, and real-time feed architecture.
+*   **[Muskan Sharma](https://github.com/MuskanSharma2024)** — Co-Creator & AI Security Lead
+    *   *Focus:* Persona prompt engineering, Llama 3.3 70B editorial evaluation rubric (70/100 publication threshold), automated source validation & fact-checking pipelines, and transparency dashboard.
+
+Visit the live **[Team & Developers Page](/team)** to learn more about the architecture and vision.
+
